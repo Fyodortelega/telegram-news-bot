@@ -28,7 +28,7 @@ async def fetch_and_post_once():
                 print(f"Ошибка загрузки RSS: {rss_url}")
                 continue
 
-            soup = BeautifulSoup(resp.content, "xml")
+            soup = BeautifulSoup(resp.content, "lxml-xml")
             items = soup.find_all("item")[:5]  # берем 5 последних постов
 
             for item in items:
