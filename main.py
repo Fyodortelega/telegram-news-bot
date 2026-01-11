@@ -78,7 +78,6 @@ async def main():
 
     # разовый пост RSS при запуске
     await fetch_and_post_once()
-    await bot.session.close()
 
 asyncio.run(main())
 
