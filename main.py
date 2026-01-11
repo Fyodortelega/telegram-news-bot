@@ -7,12 +7,6 @@ from telegram import Bot, InputFile
 TOKEN = os.getenv("TOKEN")
 CHANNEL = os.getenv("CHANNEL")
 
-# Список RSS-каналов
-RSS_LIST = [
-    "https://lenta.ru/rss",
-    # можно добавить другие RSS ссылки
-]
-
 # Проверяем переменные
 if not TOKEN or not CHANNEL:
     print("❌ Переменные окружения пустые!")
@@ -20,19 +14,25 @@ if not TOKEN or not CHANNEL:
 
 bot = Bot(token=TOKEN)
 
-async def fetch_and_post():
-    posted_urls = set()  # чтобы не постить одинаковое
+# Список RSS-каналов
+RSS_LIST = [
+    "https://lenta.ru/rss",  # добавляй сюда другие RSS по желанию
+]
 
+# Для предотвращения дублирования постов
+posted_urls = set()
+
+async def fetch_and_post():
     while True:
         for rss_url in RSS_LIST:
             feed = feedparser.parse(rss_url)
-            for entry in feed.entries[:5]:  # берем только 5 новых постов
+            for entry in feed.entries[:5]:
                 if entry.link in posted_urls:
                     continue
 
                 text = f"{entry.title}\n{entry.link}"
 
-                # Попытка получить картинку, если есть
+                # Попытка получить картинку
                 image_url = None
                 if 'media_content' in entry:
                     image_url = entry.media_content[0]['url']
@@ -63,6 +63,12 @@ async def fetch_and_post():
         await asyncio.sleep(600)  # проверяем каждые 10 минут
 
 async def main():
+    # Только один запуск для первого сообщения
+    if not os.path.exists("sent.flag"):
+        await bot.send_message(chat_id=CHANNEL, text="✅ Бот запущен и готов к автопостингу!")
+        with open("sent.flag", "w") as f:
+            f.write("sent")
+
     await fetch_and_post()
     await bot.session.close()
 
