@@ -1,8 +1,7 @@
 import os
 import asyncio
-import feedparser
 import requests
-from fastapi import FastAPI
+from bs4 import BeautifulSoup
 from telegram import Bot
 
 TOKEN = os.getenv("TOKEN")
@@ -13,8 +12,8 @@ if not TOKEN or not CHANNEL:
     exit(1)
 
 bot = Bot(token=TOKEN)
-app = FastAPI()
 
+# Список RSS-каналов
 RSS_LIST = [
     "https://lenta.ru/rss"
 ]
@@ -23,56 +22,62 @@ posted_urls = set()
 
 async def fetch_and_post_once():
     for rss_url in RSS_LIST:
-        feed = feedparser.parse(rss_url)
-        for entry in feed.entries[:5]:
-            if entry.link in posted_urls:
+        try:
+            resp = requests.get(rss_url, timeout=10)
+            if resp.status_code != 200:
+                print(f"Ошибка загрузки RSS: {rss_url}")
                 continue
 
-            text = f"{entry.title}\n{entry.link}"
+            soup = BeautifulSoup(resp.content, "xml")
+            items = soup.find_all("item")[:5]  # берем 5 последних постов
 
-            # Попытка получить картинку
-            image_url = None
-            if 'media_content' in entry:
-                image_url = entry.media_content[0]['url']
-            elif 'media_thumbnail' in entry:
-                image_url = entry.media_thumbnail[0]['url']
+            for item in items:
+                link = item.find("link").text
+                title = item.find("title").text
 
-            try:
-                if image_url:
-                    resp = requests.get(image_url)
-                    if resp.status_code == 200:
-                        await bot.send_photo(
-                            chat_id=CHANNEL,
-                            photo=resp.content,
-                            caption=text
-                        )
-                        print(f"Posted with image: {entry.title}")
+                if link in posted_urls:
+                    continue
+
+                text = f"{title}\n{link}"
+
+                # Попытка получить картинку
+                image_url = None
+                enclosure = item.find("enclosure")
+                if enclosure and enclosure.get("type", "").startswith("image"):
+                    image_url = enclosure.get("url")
+
+                try:
+                    if image_url:
+                        img_resp = requests.get(image_url)
+                        if img_resp.status_code == 200:
+                            await bot.send_photo(
+                                chat_id=CHANNEL,
+                                photo=img_resp.content,
+                                caption=text
+                            )
+                            print(f"Posted with image: {title}")
+                        else:
+                            await bot.send_message(chat_id=CHANNEL, text=text)
+                            print(f"Posted without image: {title}")
                     else:
                         await bot.send_message(chat_id=CHANNEL, text=text)
-                        print(f"Posted without image: {entry.title}")
-                else:
-                    await bot.send_message(chat_id=CHANNEL, text=text)
-                    print(f"Posted without image: {entry.title}")
-            except Exception as e:
-                print(f"Error posting: {e}")
+                        print(f"Posted without image: {title}")
+                except Exception as e:
+                    print(f"Ошибка публикации: {e}")
 
-            posted_urls.add(entry.link)
+                posted_urls.add(link)
+        except Exception as e:
+            print(f"Ошибка при обработке RSS: {e}")
 
-@app.on_event("startup")
-async def startup_event():
-    # отправляем стартовое сообщение один раз
+async def main():
+    # стартовое сообщение
     if not os.path.exists("sent.flag"):
         await bot.send_message(chat_id=CHANNEL, text="✅ Бот запущен через Render Web Service!")
         with open("sent.flag", "w") as f:
             f.write("sent")
-    # делаем первый пост RSS один раз
+
+    # разовый пост RSS при запуске
     await fetch_and_post_once()
+    await bot.session.close()
 
-@app.get("/")
-async def root():
-    return {"status": "Bot is running"}
-
-# Для Render Web Service
-if name == "main":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+asyncio.run(main())
