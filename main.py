@@ -192,7 +192,7 @@ async def check_and_post():
             print("Опубликовано:", title)
 
             # случайная пауза между 5 и 15 минутами
-            wait_time = random.randint(300, 900)
+            wait_time = random.randint(300, 800)
             print(f"Ждём {wait_time // 60} мин. перед следующей публикацией")
             await asyncio.sleep(wait_time)
 
