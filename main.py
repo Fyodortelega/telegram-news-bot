@@ -90,6 +90,6 @@ async def bot_loop():
 
 # ---------- START ----------
 
-if name == "main":
+if _name_ == "_main_":
     threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(bot_loop())
