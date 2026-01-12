@@ -215,7 +215,7 @@ for entry in feed.entries:
     delay = random.randint(MIN_DELAY, MAX_DELAY)
     await asyncio.sleep(delay)
 
-        await asyncio.sleep(60)
+    await asyncio.sleep(60)
 
 def start_bot():
     asyncio.run(rss_loop())
