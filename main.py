@@ -179,9 +179,14 @@ async def rss_loop():
                 title_hash = hash_title(title)
                 if title_hash in posted_hashes:
                     continue
-                    text = get_entry_text(entry)
-                if not text:
-                    continue
+                    text = None
+try:
+    text = get_entry_text(entry)
+except Exception as e:
+    print("Ошибка получения текста:", e)
+
+if not text:
+    continue
 
                 emoji = pick_emoji(title)
 
