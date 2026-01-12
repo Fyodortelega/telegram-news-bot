@@ -139,6 +139,6 @@ def start_bot():
 
 # ================== ЗАПУСК ==================
 
-if name == "main":
+if __name__ == "__main__":
     threading.Thread(target=start_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
