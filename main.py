@@ -29,13 +29,13 @@ def save_posted(url):
     with open(POSTED_FILE, "a", encoding="utf-8") as f:
         f.write(url + "\n")
 
-async def fetch_and_post_once():
+async def check_and_post():
     posted_urls = load_posted()
 
     for rss_url in RSS_LIST:
         resp = requests.get(rss_url, timeout=10)
         root = ET.fromstring(resp.content)
-        items = root.findall(".//item")[:4]
+        items = root.findall(".//item")[:5]
 
         for item in items:
             title = item.findtext("title")
@@ -72,14 +72,16 @@ async def fetch_and_post_once():
             except Exception as e:
                 print("Ошибка отправки:", e)
 
-async def main():
+async def main_loop():
     if not os.path.exists("sent.flag"):
         await bot.send_message(
             chat_id=CHANNEL,
-            text="✅ Бот запущен и публикует новости"
+            text="✅ Бот запущен и работает 24/7 (Render Free)"
         )
         open("sent.flag", "w").close()
 
-    await fetch_and_post_once()
+    while True:
+        await check_and_post()
+        await asyncio.sleep(600)  # каждые 10 минут
 
-asyncio.run(main())
+asyncio.run(main_loop())
