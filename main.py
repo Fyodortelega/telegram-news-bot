@@ -22,7 +22,6 @@ RSS_LIST = [
     "https://www.rbc.ru/rss/all.xml",
     "https://www.gazeta.ru/export/rss/lenta.xml",
     "https://life.ru/xml/news",
-    "https://feeds.bbci.co.uk/russian/rss.xml"
 ]
 
 POSTED_FILE = "posted.txt"
