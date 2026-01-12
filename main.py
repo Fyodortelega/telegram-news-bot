@@ -63,6 +63,14 @@ def get_summary_from_page(url, max_chars=300):
         text = ""
         for p in paragraphs:
             sentence = p.get_text().strip()
+
+            # фильтруем ненужные абзацы
+            lower = sentence.lower()
+            if any(x in lower for x in [
+                "реклама", "фото", "видео", "ссылка", "читайте также", "подпись к фото"
+            ]):
+                continue
+
             # добавляем предложение, только если оно полностью умещается
             if len(text) + len(sentence) + 1 > max_chars:
                 break
@@ -118,7 +126,6 @@ async def check_and_post():
 
             enclosure = item.find("enclosure")
             image_url = enclosure.attrib.get("url") if enclosure is not None else None
-
             try:
                 if image_url:
                     img = requests.get(image_url)
@@ -165,6 +172,6 @@ async def bot_loop():
         await asyncio.sleep(600)
 
 # ================= START =================
-if __name__ == "__main__":
+if name == "main":
     threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(bot_loop())
