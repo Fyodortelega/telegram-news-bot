@@ -92,7 +92,18 @@ async def check_and_post():
 
         for item in items:
             title = item.findtext("title")
-            link = item.findtext("link")
+link = item.findtext("link")
+description = item.findtext("description")  # краткий текст новости
+
+if description:
+    # удаляем теги html, если они есть
+    import re
+    description = re.sub("<[^<]+?>", "", description)
+    # обрезаем, если слишком длинно
+    if len(description) > 300:
+        description = description[:300] + "..."
+else:
+    description = ""
 
             if not title or not link or link in posted:
                 continue
@@ -101,11 +112,12 @@ async def check_and_post():
             tags = pick_hashtags(title)
             time_now = datetime.now().strftime("%H:%M")
 
-            text = (
-                f"{emoji} <b>{title}</b>\n\n"
-                f"🕒 {time_now}\n"
-                f"Источник: <a href=\"{link}\">ссылка</a>\n\n"
-                f"{tags}"
+           text = (
+    f"{emoji} <b>{title}</b>\n\n"
+    f"{description}\n\n"
+    f"🕒 {time_now}\n"
+    f"Источник: <a href=\"{link}\">ссылка</a>\n\n"
+    f"{tags}"
             )
 
             enclosure = item.find("enclosure")
