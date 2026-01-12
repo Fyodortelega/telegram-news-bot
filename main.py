@@ -52,7 +52,7 @@ def save_posted(url):
 def get_summary_from_page(url):
     try:
         resp = requests.get(url, timeout=10)
-        soup = BeautifulSoup(resp.content, "lxml")
+        soup = BeautifulSoup(resp.content, "html.parser")
         body = soup.find("div", class_="topic-body__content")
         if not body:
             paragraphs = soup.find_all("p")
