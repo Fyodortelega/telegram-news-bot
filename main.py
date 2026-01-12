@@ -1,217 +1,144 @@
 import os
 import asyncio
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import random
-import requests
-import xml.etree.ElementTree as ET
+import threading
+import time
+import feedparser
+from flask import Flask
 from telegram import Bot
 from bs4 import BeautifulSoup
 
-# ================= НАСТРОЙКИ =================
-TOKEN = os.getenv("TOKEN")
-CHANNEL = os.getenv("CHANNEL")
-PORT = int(os.getenv("PORT", 10000))
+# ================== НАСТРОЙКИ ==================
 
-RSS_LIST = [
-    "https://lenta.ru/rss",
+TOKEN = os.environ.get("BOT_TOKEN")
+CHANNEL = os.environ.get("CHANNEL_ID")
+
+RSS_FEEDS = [
     "https://ria.ru/export/rss2/archive/index.xml",
     "https://tass.ru/rss/v2.xml",
-    "https://www.vedomosti.ru/rss/news",
-    "https://www.kommersant.ru/RSS/news.xml",
-    "https://www.rbc.ru/rss/all.xml",
-    "https://www.gazeta.ru/export/rss/lenta.xml",
-    "https://life.ru/xml/news",
+    "https://lenta.ru/rss",
 ]
 
-POSTED_FILE = "posted.txt"
+MIN_DELAY = 300   # 5 минут
+MAX_DELAY = 900   # 15 минут
+
+posted_links = set()
+
+# ================== TELEGRAM ==================
+
 bot = Bot(token=TOKEN)
 
-# ================= WEB SERVER =================
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"News bot is running")
+# ================== FLASK ==================
 
-def run_server():
-    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+app = Flask(name)
 
-# ================= КАТЕГОРИИ =================
-CATEGORIES = {
-    "срочно": {"emoji": "🚨⚡", "tag": "#срочно"},
-    "криминал": {"emoji": "🚔", "tag": "#криминал"},
-    "погода": {"emoji": "☃️❄️", "tag": "#погода"},
-    "политика": {"emoji": "🏛", "tag": "#политика"},
-    "мир": {"emoji": "🌍", "tag": "#мир"}
-}
+@app.route("/")
+def home():
+    return "Bot is running"
 
-# ================= RSS =================
-def load_posted():
-    if not os.path.exists(POSTED_FILE):
-        return set()
-    with open(POSTED_FILE, "r", encoding="utf-8") as f:
-        return set(line.strip() for line in f if line.strip())
+# ================== ТЕКСТ ==================
 
-def save_posted(url):
-    with open(POSTED_FILE, "a", encoding="utf-8") as f:
-        f.write(url + "\n")
+def clean_text(html):
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text(" ", strip=True)
 
-# ================= ПАРСИНГ СТРАНИЦЫ =================
-def get_summary_from_page(url, max_chars=300):
-    try:
-        resp = requests.get(url, timeout=10)
-        soup = BeautifulSoup(resp.content, "html.parser")
+    trash = [
+        "Реклама",
+        "Фото:",
+        "Источник:",
+        "Читайте также",
+    ]
 
-        text = ""
-        paragraphs = []
+    for t in trash:
+        text = text.replace(t, "")
 
-        # RIA Новости
-        if "ria.ru" in url:
-            content = soup.find_all("div", class_="article__text")
-            for c in content:
-                paragraphs.extend(c.find_all("p"))
+    text = text.strip()
 
-        # Lenta.ru
-        elif "lenta.ru" in url:
-            content = soup.find("div", class_="topic__content")
-            if content:
-                paragraphs = content.find_all("p")
-            else:
-                paragraphs = soup.find_all("p")
+    if len(text) < 50:
+        return None
 
-        # RBC
-        elif "rbc.ru" in url:
-            content = soup.find("div", class_="article__text")
-            if content:
-                paragraphs = content.find_all("p")
-            else:
-                paragraphs = soup.find_all("p")
-
-        # Остальные сайты
+    # не обрываем предложение
+    sentences = text.split(". ")
+    result = ""
+    for s in sentences:
+        if len(result) + len(s) < 600:
+            result += s + ". "
         else:
-            paragraphs = soup.find_all("p")
+            break
 
-        # Формируем текст новости
-        for p in paragraphs:
-            sentence = p.get_text().strip()
-            lower = sentence.lower()
-            if any(x in lower for x in [
-                "реклама", "фото", "видео", "ссылка", "читайте также", "подпись к фото"
-            ]):
-                continue
-            if len(text) + len(sentence) + 1 > max_chars:
-                break
-            if sentence:
-                if text:
-                    text += " "
-                text += sentence
+    return result.strip()
 
-        return text.strip()
+def get_entry_text(entry):
+    if hasattr(entry, "content"):
+        return clean_text(entry.content[0].value)
+    if entry.get("summary"):
+        return clean_text(entry.summary)
+    if entry.get("description"):
+        return clean_text(entry.description)
+    return None
 
-    except Exception as e:
-        print("Ошибка при парсинге страницы:", e)
-        return ""
+# ================== ЭМОДЗИ ==================
 
-def categorize(title):
+def pick_emoji(title):
     t = title.lower()
-    for keyword, data in CATEGORIES.items():
-        if keyword in t:
-            emoji = data["emoji"]
-            tag = data["tag"]
-            if keyword == "срочно":
-                title = "⚡ " + title
-            return emoji, tag, title
-    return "📰", "#новости", title
+    if "срочно" in t or "экстр" in t:
+        return "🚨"
+    if "кримин" in t or "убийств" in t:
+        return "🚔"
+    if "снег" in t or "зима" in t:
+        return "☃️"
+    return "📰"
 
-# ================= ПУБЛИКАЦИЯ =================
-async def check_and_post():
-    posted = load_posted()
-    all_items = []
-    # собираем новости со всех RSS
-    for rss in RSS_LIST:
-        try:
-            resp = requests.get(rss, timeout=10)
-            root = ET.fromstring(resp.content)
-            items = root.findall(".//item")[:5]  # максимум 5 свежих
-            all_items.extend(items)
-        except Exception as e:
-            print("Ошибка RSS:", e)
+# ================== ОСНОВНАЯ ЛОГИКА ==================
 
-    # перемешиваем все новости
-    random.shuffle(all_items)
+async def rss_loop():
+    while True:
+        random.shuffle(RSS_FEEDS)
 
-    # публикуем новости по одной
-    for item in all_items:
-        title = item.findtext("title")
-        link = item.findtext("link")
-        if not title or not link or link in posted:
-            continue
+        for feed_url in RSS_FEEDS:
+            feed = feedparser.parse(feed_url)
 
-        description = get_summary_from_page(link)
-        emoji, tag, title = categorize(title)
+            for entry in feed.entries:
+                title = entry.get("title")
+                link = entry.get("link")
 
-        text = (
-            f"{emoji} <b>{title}</b>\n\n"
-            f"{description}\n\n"
-            f"Источник: <a href=\"{link}\">ссылка</a>\n\n"
-            f"{tag}"
-        )
+                if not title or not link or link in posted_links:
+                    continue
 
-        enclosure = item.find("enclosure")
-        image_url = enclosure.attrib.get("url") if enclosure is not None else None
+                text = get_entry_text(entry)
+                if not text:
+                    continue
 
-        try:
-            if image_url:
-                img = requests.get(image_url)
-                if img.status_code == 200:
-                    await bot.send_photo(
-                        CHANNEL,
-                        img.content,
-                        caption=text,
-                        parse_mode="HTML"
-                    )
-                else:
+                emoji = pick_emoji(title)
+
+                message = (
+                    f"{emoji} <b>{title}</b>\n\n"
+                    f"{text}\n\n"
+                    f"<i>Источник:</i> {link}"
+                )
+
+                try:
                     await bot.send_message(
-                        CHANNEL,
-                        text,
+                        chat_id=CHANNEL,
+                        text=message,
                         parse_mode="HTML",
                         disable_web_page_preview=True
                     )
-            else:
-                await bot.send_message(
-                    CHANNEL,
-                    text,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True
-                )
+                    posted_links.add(link)
+                    print("Опубликовано:", title)
+                except Exception as e:
+                    print("Ошибка отправки:", e)
 
-            save_posted(link)
-            posted.add(link)
-            print("Опубликовано:", title)
+                delay = random.randint(MIN_DELAY, MAX_DELAY)
+                await asyncio.sleep(delay)
 
-            # случайная пауза между 5 и 15 минутами
-            wait_time = random.randint(60, 120)
-            print(f"Ждём {wait_time // 60} мин. перед следующей публикацией")
-            await asyncio.sleep(wait_time)
+        await asyncio.sleep(60)
 
-        except Exception as e:
-            print("Ошибка отправки:", e)
+def start_bot():
+    asyncio.run(rss_loop())
 
-# ================= LOOP =================
-async def bot_loop():
-    if not os.path.exists("started.flag"):
-        await bot.send_message(
-            CHANNEL,
-            "✅ Новостной бот запущен и работает автоматически"
-        )
-        open("started.flag", "w").close()
+# ================== ЗАПУСК ==================
 
-    while True:
-        await check_and_post()
-        await asyncio.sleep(600)
-
-# ================= START =================
-if __name__ == "__main__":
-    threading.Thread(target=run_server, daemon=True).start()
-    asyncio.run(bot_loop())
+if name == "main":
+    threading.Thread(target=start_bot, daemon=True).start()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
