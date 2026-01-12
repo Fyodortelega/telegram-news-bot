@@ -13,7 +13,17 @@ TOKEN = os.getenv("TOKEN")
 CHANNEL = os.getenv("CHANNEL")
 PORT = int(os.getenv("PORT", 10000))
 
-RSS_LIST = ["https://lenta.ru/rss"]
+RSS_LIST = [
+    "https://lenta.ru/rss",
+    "https://ria.ru/export/rss2/archive/index.xml",
+    "https://tass.ru/rss/v2.xml",
+    "https://www.vedomosti.ru/rss/news",
+    "https://www.kommersant.ru/RSS/news.xml",
+    "https://www.rbc.ru/rss/all.xml",
+    "https://www.gazeta.ru/export/rss/lenta.xml",
+    "https://life.ru/xml/news",
+    "https://feeds.bbci.co.uk/russian/rss.xml"
+]
 POSTED_FILE = "posted.txt"
 
 bot = Bot(token=TOKEN)
