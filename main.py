@@ -64,10 +64,36 @@ def get_summary_from_page(url, max_chars=300):
         resp = requests.get(url, timeout=10)
         soup = BeautifulSoup(resp.content, "html.parser")
 
-        content = soup.find("div", class_="topic__content")
-        paragraphs = content.find_all("p") if content else soup.find_all("p")
-
         text = ""
+        paragraphs = []
+
+        # RIA Новости
+        if "ria.ru" in url:
+            content = soup.find_all("div", class_="article__text")
+            for c in content:
+                paragraphs.extend(c.find_all("p"))
+
+        # Lenta.ru
+        elif "lenta.ru" in url:
+            content = soup.find("div", class_="topic__content")
+            if content:
+                paragraphs = content.find_all("p")
+            else:
+                paragraphs = soup.find_all("p")
+
+        # RBC
+        elif "rbc.ru" in url:
+            content = soup.find("div", class_="article__text")
+            if content:
+                paragraphs = content.find_all("p")
+            else:
+                paragraphs = soup.find_all("p")
+
+        # Остальные сайты
+        else:
+            paragraphs = soup.find_all("p")
+
+        # Формируем текст новости
         for p in paragraphs:
             sentence = p.get_text().strip()
             lower = sentence.lower()
@@ -81,7 +107,9 @@ def get_summary_from_page(url, max_chars=300):
                 if text:
                     text += " "
                 text += sentence
+
         return text.strip()
+
     except Exception as e:
         print("Ошибка при парсинге страницы:", e)
         return ""
@@ -101,13 +129,12 @@ def categorize(title):
 async def check_and_post():
     posted = load_posted()
     all_items = []
-
     # собираем новости со всех RSS
     for rss in RSS_LIST:
         try:
             resp = requests.get(rss, timeout=10)
             root = ET.fromstring(resp.content)
-            items = root.findall(".//item")[:5]  # берём максимум 5 свежих
+            items = root.findall(".//item")[:5]  # максимум 5 свежих
             all_items.extend(items)
         except Exception as e:
             print("Ошибка RSS:", e)
@@ -131,6 +158,7 @@ async def check_and_post():
             f"Источник: <a href=\"{link}\">ссылка</a>\n\n"
             f"{tag}"
         )
+
         enclosure = item.find("enclosure")
         image_url = enclosure.attrib.get("url") if enclosure is not None else None
 
