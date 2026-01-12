@@ -1,7 +1,7 @@
 import os
 import asyncio
 import threading
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 import xml.etree.ElementTree as ET
@@ -46,7 +46,7 @@ def pick_emoji(title):
         return "☃️❄️"
     if any(w in t for w in ["путин", "закон", "дума", "правительств"]):
         return "🏛"
-    if any(w in t for w in ["сша", "европа", "мир", "украин", "запад"]):
+    if any(w in t for w in ["сша", "европа", "мир", "украин"]):
         return "🌍"
 
     return "📰"
@@ -85,20 +85,31 @@ def save_posted(url):
 
 async def check_and_post():
     posted = load_posted()
+    moscow_tz = timezone(timedelta(hours=3))
 
     for rss in RSS_LIST:
-        resp = requests.get(rss, timeout=10)
-        root = ET.fromstring(resp.content)
-        items = root.findall(".//item")[:5]
+        try:
+            resp = requests.get(rss, timeout=10)
+            root = ET.fromstring(resp.content)
+            items = root.findall(".//item")[:5]
+        except Exception as e:
+            print("Ошибка при парсинге RSS:", e)
+            continue
 
         for item in items:
             title = item.findtext("title")
             link = item.findtext("link")
-            description = item.findtext("description") or ""
+
+            # берём описание либо content:encoded
+            description = (
+                item.findtext("description") or
+                item.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or
+                ""
+            )
 
             if description:
-                # удаляем HTML теги
-                description = re.sub("<[^<]+?>", "", description)
+                description = re.sub("<[^<]+?>", "", description)  # удалить HTML
+                description = description.strip()
                 if len(description) > 300:
                     description = description[:300] + "..."
 
@@ -107,7 +118,7 @@ async def check_and_post():
 
             emoji = pick_emoji(title)
             tags = pick_hashtags(title)
-            time_now = datetime.now().strftime("%H:%M")
+            time_now = datetime.now(moscow_tz).strftime("%H:%M")
 
             text = (
                 f"{emoji} <b>{title}</b>\n\n"
@@ -119,7 +130,6 @@ async def check_and_post():
 
             enclosure = item.find("enclosure")
             image_url = enclosure.attrib.get("url") if enclosure is not None else None
-
             try:
                 if image_url:
                     img = requests.get(image_url)
@@ -129,7 +139,7 @@ async def check_and_post():
                             img.content,
                             caption=text,
                             parse_mode="HTML"
-                            )
+                        )
                     else:
                         await bot.send_message(
                             CHANNEL,
@@ -150,7 +160,7 @@ async def check_and_post():
                 print("Опубликовано:", title)
 
             except Exception as e:
-                print("Ошибка:", e)
+                print("Ошибка отправки:", e)
 
 # ================= LOOP =================
 
