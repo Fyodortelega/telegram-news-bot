@@ -1,29 +1,24 @@
 import os
 import asyncio
 import threading
-from datetime import datetime, timezone, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 import xml.etree.ElementTree as ET
 from telegram import Bot
+from bs4 import BeautifulSoup
 import re
 
 # ================= НАСТРОЙКИ =================
-
 TOKEN = os.getenv("TOKEN")
 CHANNEL = os.getenv("CHANNEL")
 PORT = int(os.getenv("PORT", 10000))
 
-RSS_LIST = [
-    "https://lenta.ru/rss"
-]
-
+RSS_LIST = ["https://lenta.ru/rss"]
 POSTED_FILE = "posted.txt"
 
 bot = Bot(token=TOKEN)
 
-# ================= WEB SERVER (для Render) =================
-
+# ================= WEB SERVER =================
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -33,46 +28,16 @@ class Handler(BaseHTTPRequestHandler):
 def run_server():
     HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 
-# ================= ДИЗАЙН =================
-
-def pick_emoji(title):
-    t = title.lower()
-
-    if any(w in t for w in ["срочно", "экстр", "важно"]):
-        return "🚨⚡"
-    if any(w in t for w in ["убийств", "дтп", "пожар", "взрыв", "криминал"]):
-        return "🚔🚨"
-    if any(w in t for w in ["снег", "зима", "мороз", "метель"]):
-        return "☃️❄️"
-    if any(w in t for w in ["путин", "закон", "дума", "правительств"]):
-        return "🏛"
-    if any(w in t for w in ["сша", "европа", "мир", "украин"]):
-        return "🌍"
-
-    return "📰"
-
-def pick_hashtags(title):
-    t = title.lower()
-    tags = []
-
-    if any(w in t for w in ["срочно", "экстр"]):
-        tags.append("#срочно")
-    if any(w in t for w in ["снег", "зима"]):
-        tags.append("#погода")
-    if any(w in t for w in ["убийств", "дтп", "пожар", "криминал"]):
-        tags.append("#криминал")
-    if any(w in t for w in ["путин", "дума", "закон"]):
-        tags.append("#политика")
-    if any(w in t for w in ["мир", "сша", "европа"]):
-        tags.append("#мир")
-
-    if not tags:
-        tags.append("#новости")
-
-    return " ".join(tags)
+# ================= КАТЕГОРИИ =================
+CATEGORIES = {
+    "срочно": {"emoji": "🚨⚡", "tag": "#срочно"},
+    "криминал": {"emoji": "🚔", "tag": "#криминал"},
+    "погода": {"emoji": "☃️❄️", "tag": "#погода"},
+    "политика": {"emoji": "🏛", "tag": "#политика"},
+    "мир": {"emoji": "🌍", "tag": "#мир"}
+}
 
 # ================= RSS =================
-
 def load_posted():
     if not os.path.exists(POSTED_FILE):
         return set()
@@ -83,53 +48,69 @@ def save_posted(url):
     with open(POSTED_FILE, "a", encoding="utf-8") as f:
         f.write(url + "\n")
 
+# ================= ПАРСИНГ СТРАНИЦЫ =================
+def get_summary_from_page(url):
+    try:
+        resp = requests.get(url, timeout=10)
+        soup = BeautifulSoup(resp.content, "lxml")
+        body = soup.find("div", class_="topic-body__content")
+        if not body:
+            paragraphs = soup.find_all("p")
+            text = " ".join(p.get_text() for p in paragraphs[:2])
+        else:
+            text = body.get_text()
+        text = text.strip()
+        if len(text) > 300:
+            text = text[:300] + "..."
+        return text
+    except Exception as e:
+        print("Ошибка парсинга страницы:", e)
+        return ""
+
+def categorize(title):
+    t = title.lower()
+    for keyword, data in CATEGORIES.items():
+        if keyword in t:
+            emoji = data["emoji"]
+            tag = data["tag"]
+            # для срочных добавляем ⚡ в начало заголовка
+            if keyword == "срочно":
+                title = "⚡ " + title
+            return emoji, tag, title
+    return "📰", "#новости", title
+
+# ================= ПУБЛИКАЦИЯ =================
 async def check_and_post():
     posted = load_posted()
-    moscow_tz = timezone(timedelta(hours=3))
-
     for rss in RSS_LIST:
         try:
             resp = requests.get(rss, timeout=10)
             root = ET.fromstring(resp.content)
             items = root.findall(".//item")[:5]
         except Exception as e:
-            print("Ошибка при парсинге RSS:", e)
+            print("Ошибка RSS:", e)
             continue
 
         for item in items:
             title = item.findtext("title")
             link = item.findtext("link")
 
-            # берём описание либо content:encoded
-            description = (
-                item.findtext("description") or
-                item.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or
-                ""
-            )
-
-            if description:
-                description = re.sub("<[^<]+?>", "", description)  # удалить HTML
-                description = description.strip()
-                if len(description) > 300:
-                    description = description[:300] + "..."
-
             if not title or not link or link in posted:
                 continue
 
-            emoji = pick_emoji(title)
-            tags = pick_hashtags(title)
-            time_now = datetime.now(moscow_tz).strftime("%H:%M")
+            description = get_summary_from_page(link)
+            emoji, tag, title = categorize(title)
 
             text = (
                 f"{emoji} <b>{title}</b>\n\n"
                 f"{description}\n\n"
-                f"🕒 {time_now}\n"
                 f"Источник: <a href=\"{link}\">ссылка</a>\n\n"
-                f"{tags}"
+                f"{tag}"
             )
 
             enclosure = item.find("enclosure")
             image_url = enclosure.attrib.get("url") if enclosure is not None else None
+
             try:
                 if image_url:
                     img = requests.get(image_url)
@@ -139,7 +120,7 @@ async def check_and_post():
                             img.content,
                             caption=text,
                             parse_mode="HTML"
-                        )
+                            )
                     else:
                         await bot.send_message(
                             CHANNEL,
@@ -163,7 +144,6 @@ async def check_and_post():
                 print("Ошибка отправки:", e)
 
 # ================= LOOP =================
-
 async def bot_loop():
     if not os.path.exists("started.flag"):
         await bot.send_message(
@@ -174,10 +154,9 @@ async def bot_loop():
 
     while True:
         await check_and_post()
-        await asyncio.sleep(600)  # каждые 10 минут
+        await asyncio.sleep(600)
 
 # ================= START =================
-
-if __name__ == "__main__":
+if name == "main":
     threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(bot_loop())
