@@ -25,8 +25,8 @@ RSS_FEEDS = [
     "https://www.fontanka.ru/rss/news",
 ]
 
-MIN_DELAY = 100  # 5 минут
-MAX_DELAY = 300  # 15 минут
+MIN_DELAY = 300  # 5 минут
+MAX_DELAY = 800  # 15 минут
 
 posted_hashes = set()
 
