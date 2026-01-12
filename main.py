@@ -165,6 +165,6 @@ async def bot_loop():
         await asyncio.sleep(600)
 
 # ================= START =================
-if name == "main":
+if __name__ == "__main__":
     threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(bot_loop())
