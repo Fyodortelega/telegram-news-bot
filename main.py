@@ -170,49 +170,50 @@ async def rss_loop():
             feed = feedparser.parse(feed_url)
 
             for entry in feed.entries:
-                title = entry.get("title")
-                link = entry.get("link")
+    title = entry.get("title")
+    link = entry.get("link")
 
-                if not title or not link:
-                    continue
+    if not title or not link:
+        continue
 
-                title_hash = hash_title(title)
-                if title_hash in posted_hashes:
-                    continue
-                    text = None
-try:
-    text = get_entry_text(entry)
-except Exception as e:
-    print("Ошибка получения текста:", e)
+    title_hash = hash_title(title)
+    if title_hash in posted_hashes:
+        continue
 
-if not text:
-    continue
+    text = None
+    try:
+        text = get_entry_text(entry)
+    except Exception as e:
+        print("Ошибка получения текста:", e)
 
-                emoji = pick_emoji(title)
+    if not text:
+        continue
 
-                message = (
-                    f"{emoji} <b>{title}</b>\n\n"
-                    f"{text}\n\n"
-                    f"<i>Источник:</i> {link}"
-                )
+    emoji = pick_emoji(title)
 
-                try:
-                    await bot.send_message(
-                        chat_id=CHANNEL,
-                        text=message,
-                        parse_mode="HTML",
-                        disable_web_page_preview=True
-                    )
+    message = (
+        f"{emoji} <b>{title}</b>\n\n"
+        f"{text}\n\n"
+        f"<i>Источник:</i> {link}"
+    )
 
-                    posted_hashes.add(title_hash)
-                    print("Опубликовано:", title)
+    try:
+        await bot.send_message(
+            chat_id=CHANNEL,
+            text=message,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
 
-                except Exception as e:
-                    print("Ошибка отправки:", e)
-                    continue
+        posted_hashes.add(title_hash)
+        print("Опубликовано:", title)
 
-                delay = random.randint(MIN_DELAY, MAX_DELAY)
-                await asyncio.sleep(delay)
+    except Exception as e:
+        print("Ошибка отправки:", e)
+        continue
+
+    delay = random.randint(MIN_DELAY, MAX_DELAY)
+    await asyncio.sleep(delay)
 
         await asyncio.sleep(60)
 
