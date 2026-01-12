@@ -16,9 +16,9 @@ TOKEN = os.environ.get("BOT_TOKEN")
 CHANNEL = os.environ.get("CHANNEL_ID")
 
 RSS_FEEDS = [
-    "https://ria.ru/export/rss2/archive/index.xml",
-    "https://www.kommersant.ru/RSS/news.xml",
-    "https://tass.ru/rss/v2.xml",
+    "https://www.vedomosti.ru/rss/news",
+    "https://life.ru/xml/news",
+    "https://www.gazeta.ru/export/rss",
     "https://lenta.ru/rss",
 ]
 
