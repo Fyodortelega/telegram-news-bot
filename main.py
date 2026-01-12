@@ -1,7 +1,7 @@
 import os
 import asyncio
 import requests
-from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
 from telegram import Bot
 
 TOKEN = os.getenv("TOKEN")
@@ -24,59 +24,56 @@ async def fetch_and_post_once():
         try:
             resp = requests.get(rss_url, timeout=10)
             if resp.status_code != 200:
-                print(f"Ошибка загрузки RSS: {rss_url}")
+                print("Ошибка загрузки RSS")
                 continue
 
-            # Используем lxml для XML
-            soup = BeautifulSoup(resp.content, "lxml-xml")
-            items = soup.find_all("item")[:5]
+            root = ET.fromstring(resp.content)
+            items = root.findall(".//item")[:5]
 
             for item in items:
-                link = item.find("link").text
-                title = item.find("title").text
+                title = item.findtext("title")
+                link = item.findtext("link")
 
-                if link in posted_urls:
+                if not title or not link or link in posted_urls:
                     continue
 
                 text = f"{title}\n{link}"
 
-                # Попытка получить картинку
+                # Ищем картинку
                 image_url = None
                 enclosure = item.find("enclosure")
-                if enclosure and enclosure.get("type", "").startswith("image"):
-                    image_url = enclosure.get("url")
+                if enclosure is not None:
+                    image_url = enclosure.attrib.get("url")
 
                 try:
                     if image_url:
-                        img_resp = requests.get(image_url)
-                        if img_resp.status_code == 200:
+                        img = requests.get(image_url)
+                        if img.status_code == 200:
                             await bot.send_photo(
                                 chat_id=CHANNEL,
-                                photo=img_resp.content,
+                                photo=img.content,
                                 caption=text
                             )
                             print(f"Posted with image: {title}")
                         else:
                             await bot.send_message(chat_id=CHANNEL, text=text)
-                            print(f"Posted without image: {title}")
                     else:
                         await bot.send_message(chat_id=CHANNEL, text=text)
-                        print(f"Posted without image: {title}")
+
                 except Exception as e:
-                    print(f"Ошибка публикации: {e}")
+                    print("Ошибка отправки:", e)
 
                 posted_urls.add(link)
+
         except Exception as e:
-            print(f"Ошибка при обработке RSS: {e}")
+            print("Ошибка RSS:", e)
 
 async def main():
-    # стартовое сообщение
+    # стартовое сообщение один раз
     if not os.path.exists("sent.flag"):
-        await bot.send_message(chat_id=CHANNEL, text="✅ Бот запущен через Render Web Service!")
-        with open("sent.flag", "w") as f:
-            f.write("sent")
+        await bot.send_message(chat_id=CHANNEL, text="✅ Бот запущен и публикует новости")
+        open("sent.flag", "w").close()
 
     await fetch_and_post_once()
-    # больше не нужно закрывать bot.session
 
 asyncio.run(main())
