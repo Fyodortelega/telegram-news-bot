@@ -6,6 +6,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 import xml.etree.ElementTree as ET
 from telegram import Bot
+import re
 
 # ================= НАСТРОЙКИ =================
 
@@ -45,7 +46,7 @@ def pick_emoji(title):
         return "☃️❄️"
     if any(w in t for w in ["путин", "закон", "дума", "правительств"]):
         return "🏛"
-    if any(w in t for w in ["сша", "европа", "мир", "украин", "запад"]):
+    if any(w in t for w in ["сша", "европа", "мир", "украин"]):
         return "🌍"
 
     return "📰"
@@ -92,18 +93,14 @@ async def check_and_post():
 
         for item in items:
             title = item.findtext("title")
-link = item.findtext("link")
-description = item.findtext("description")  # краткий текст новости
+            link = item.findtext("link")
+            description = item.findtext("description") or ""
 
-if description:
-    # удаляем теги html, если они есть
-    import re
-    description = re.sub("<[^<]+?>", "", description)
-    # обрезаем, если слишком длинно
-    if len(description) > 300:
-        description = description[:300] + "..."
-else:
-    description = ""
+            if description:
+                # удаляем HTML теги
+                description = re.sub("<[^<]+?>", "", description)
+                if len(description) > 300:
+                    description = description[:300] + "..."
 
             if not title or not link or link in posted:
                 continue
@@ -112,12 +109,12 @@ else:
             tags = pick_hashtags(title)
             time_now = datetime.now().strftime("%H:%M")
 
-           text = (
-    f"{emoji} <b>{title}</b>\n\n"
-    f"{description}\n\n"
-    f"🕒 {time_now}\n"
-    f"Источник: <a href=\"{link}\">ссылка</a>\n\n"
-    f"{tags}"
+            text = (
+                f"{emoji} <b>{title}</b>\n\n"
+                f"{description}\n\n"
+                f"🕒 {time_now}\n"
+                f"Источник: <a href=\"{link}\">ссылка</a>\n\n"
+                f"{tags}"
             )
 
             enclosure = item.find("enclosure")
@@ -132,7 +129,7 @@ else:
                             img.content,
                             caption=text,
                             parse_mode="HTML"
-                        )
+                            )
                     else:
                         await bot.send_message(
                             CHANNEL,
@@ -147,7 +144,8 @@ else:
                         parse_mode="HTML",
                         disable_web_page_preview=True
                     )
-                    save_posted(link)
+
+                save_posted(link)
                 posted.add(link)
                 print("Опубликовано:", title)
 
@@ -166,10 +164,10 @@ async def bot_loop():
 
     while True:
         await check_and_post()
-        await asyncio.sleep(600)  # 10 минут
+        await asyncio.sleep(600)  # каждые 10 минут
 
 # ================= START =================
 
-if __name__ == "__main__":
+if name == "main":
     threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(bot_loop())
