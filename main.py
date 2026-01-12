@@ -2,6 +2,7 @@ import os
 import asyncio
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import random
 import requests
 import xml.etree.ElementTree as ET
 from telegram import Bot
@@ -64,7 +65,7 @@ def get_summary_from_page(url, max_chars=300):
         for p in paragraphs:
             sentence = p.get_text().strip()
 
-            # фильтруем ненужные абзацы
+            # фильтруем рекламу, подписи к фото, видео и ссылки
             lower = sentence.lower()
             if any(x in lower for x in [
                 "реклама", "фото", "видео", "ссылка", "читайте также", "подпись к фото"
@@ -155,6 +156,11 @@ async def check_and_post():
                 posted.add(link)
                 print("Опубликовано:", title)
 
+                # 🌟 случайная пауза между 5 и 15 минутами
+                wait_time = random.randint(300, 800)
+                print(f"Ждём {wait_time // 60} мин. перед следующей публикацией")
+                await asyncio.sleep(wait_time)
+
             except Exception as e:
                 print("Ошибка отправки:", e)
 
@@ -169,9 +175,10 @@ async def bot_loop():
 
     while True:
         await check_and_post()
+        # если после всех RSS нет новых новостей, ждём 10 минут
         await asyncio.sleep(600)
 
 # ================= START =================
-if __name__ == "__main__":
+if name == "main":
     threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(bot_loop())
