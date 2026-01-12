@@ -22,8 +22,8 @@ RSS_FEEDS = [
     "https://lenta.ru/rss",
 ]
 
-MIN_DELAY = 300   # 5 минут
-MAX_DELAY = 900   # 15 минут
+MIN_DELAY = 10   # 5 минут
+MAX_DELAY = 100   # 15 минут
 
 posted_hashes = set()
 
