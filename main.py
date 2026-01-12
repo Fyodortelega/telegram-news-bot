@@ -6,7 +6,6 @@ import requests
 import xml.etree.ElementTree as ET
 from telegram import Bot
 from bs4 import BeautifulSoup
-import re
 
 # ================= НАСТРОЙКИ =================
 TOKEN = os.getenv("TOKEN")
@@ -49,22 +48,32 @@ def save_posted(url):
         f.write(url + "\n")
 
 # ================= ПАРСИНГ СТРАНИЦЫ =================
-def get_summary_from_page(url):
+def get_summary_from_page(url, max_chars=300):
     try:
         resp = requests.get(url, timeout=10)
         soup = BeautifulSoup(resp.content, "html.parser")
-        body = soup.find("div", class_="topic-body__content")
-        if not body:
+
+        # основной текст новости
+        content = soup.find("div", class_="topic__content")
+        if not content:
             paragraphs = soup.find_all("p")
-            text = " ".join(p.get_text() for p in paragraphs[:2])
         else:
-            text = body.get_text()
-        text = text.strip()
-        if len(text) > 300:
-            text = text[:300] + "..."
-        return text
+            paragraphs = content.find_all("p")
+
+        text = ""
+        for p in paragraphs:
+            sentence = p.get_text().strip()
+            # добавляем предложение, только если оно полностью умещается
+            if len(text) + len(sentence) + 1 > max_chars:
+                break
+            if sentence:
+                if text:
+                    text += " "
+                text += sentence
+
+        return text.strip()
     except Exception as e:
-        print("Ошибка парсинга страницы:", e)
+        print("Ошибка при парсинге страницы:", e)
         return ""
 
 def categorize(title):
@@ -73,7 +82,6 @@ def categorize(title):
         if keyword in t:
             emoji = data["emoji"]
             tag = data["tag"]
-            # для срочных добавляем ⚡ в начало заголовка
             if keyword == "срочно":
                 title = "⚡ " + title
             return emoji, tag, title
@@ -120,7 +128,7 @@ async def check_and_post():
                             img.content,
                             caption=text,
                             parse_mode="HTML"
-                            )
+                        )
                     else:
                         await bot.send_message(
                             CHANNEL,
@@ -157,6 +165,6 @@ async def bot_loop():
         await asyncio.sleep(600)
 
 # ================= START =================
-if __name__ == "__main__":
+if name == "main":
     threading.Thread(target=run_server, daemon=True).start()
     asyncio.run(bot_loop())
