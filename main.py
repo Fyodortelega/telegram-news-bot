@@ -169,7 +169,7 @@ async def rss_loop():
         for feed_url in RSS_FEEDS:
             feed = feedparser.parse(feed_url)
 
-            for entry in feed.entries:
+for entry in feed.entries:
     title = entry.get("title")
     link = entry.get("link")
 
