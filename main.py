@@ -152,7 +152,7 @@ async def rss_loop():
                     continue
 
                 emoji = pick_emoji(title)
-               message = (
+    message = (
     f"{emoji} <b>{title}</b>\n\n"
     f"{text}\n\n"
     f"<i>Источник:</i> <a href='{link}'>ссылка</a>"
