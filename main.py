@@ -1,15 +1,14 @@
 import os
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 import xml.etree.ElementTree as ET
 from telegram import Bot
 
 TOKEN = os.getenv("TOKEN")
 CHANNEL = os.getenv("CHANNEL")
-
-if not TOKEN or not CHANNEL:
-    print("❌ Переменные окружения пустые!")
-    exit(1)
+PORT = int(os.getenv("PORT", 10000))
 
 bot = Bot(token=TOKEN)
 
@@ -18,6 +17,20 @@ RSS_LIST = [
 ]
 
 POSTED_FILE = "posted.txt"
+
+# ---------- WEB SERVER (для Render) ----------
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+def run_server():
+    server = HTTPServer(("0.0.0.0", PORT), Handler)
+    server.serve_forever()
+
+# ---------- RSS BOT ----------
 
 def load_posted():
     if not os.path.exists(POSTED_FILE):
@@ -30,10 +43,10 @@ def save_posted(url):
         f.write(url + "\n")
 
 async def check_and_post():
-    posted_urls = load_posted()
+    posted = load_posted()
 
-    for rss_url in RSS_LIST:
-        resp = requests.get(rss_url, timeout=10)
+    for rss in RSS_LIST:
+        resp = requests.get(rss, timeout=10)
         root = ET.fromstring(resp.content)
         items = root.findall(".//item")[:5]
 
@@ -41,47 +54,42 @@ async def check_and_post():
             title = item.findtext("title")
             link = item.findtext("link")
 
-            if not title or not link or link in posted_urls:
+            if not title or not link or link in posted:
                 continue
 
             text = f"{title}\n{link}"
 
-            image_url = None
             enclosure = item.find("enclosure")
-            if enclosure is not None:
-                image_url = enclosure.attrib.get("url")
+            image_url = enclosure.attrib.get("url") if enclosure is not None else None
 
             try:
                 if image_url:
                     img = requests.get(image_url)
                     if img.status_code == 200:
-                        await bot.send_photo(
-                            chat_id=CHANNEL,
-                            photo=img.content,
-                            caption=text
-                        )
+                        await bot.send_photo(CHANNEL, img.content, caption=text)
                     else:
-                        await bot.send_message(chat_id=CHANNEL, text=text)
+                        await bot.send_message(CHANNEL, text)
                 else:
-                    await bot.send_message(chat_id=CHANNEL, text=text)
+                    await bot.send_message(CHANNEL, text)
 
                 save_posted(link)
-                posted_urls.add(link)
+                posted.add(link)
                 print("Опубликовано:", title)
 
             except Exception as e:
-                print("Ошибка отправки:", e)
+                print("Ошибка:", e)
 
-async def main_loop():
-    if not os.path.exists("sent.flag"):
-        await bot.send_message(
-            chat_id=CHANNEL,
-            text="✅ Бот запущен и работает 24/7 (Render Free)"
-        )
-        open("sent.flag", "w").close()
+async def bot_loop():
+    if not os.path.exists("started.flag"):
+        await bot.send_message(CHANNEL, "✅ Бот запущен и работает бесплатно 24/7")
+        open("started.flag", "w").close()
 
     while True:
         await check_and_post()
-        await asyncio.sleep(600)  # каждые 10 минут
+        await asyncio.sleep(600)
 
-asyncio.run(main_loop())
+# ---------- START ----------
+
+if name == "main":
+    threading.Thread(target=run_server, daemon=True).start()
+    asyncio.run(bot_loop())
